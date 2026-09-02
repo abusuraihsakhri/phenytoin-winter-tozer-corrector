@@ -1,104 +1,175 @@
-# Phenytoin Winter-Tozer Correction Calculator
+# Phenytoin Winter Tozer Corrector
 
-Real clinical calculator for correcting measured phenytoin levels in hypoalbuminemia and renal impairment, with Michaelis-Menten kinetics for dose adjustment.
+> **Domain:** Clinical Pharmacology & Precision Pharmacotherapy  
+> **Reference Guidelines & Standards:** `CPIC Guidelines & FDA Table of Pharmacogenomic Biomarkers`
 
-## Clinical Background
+<div align="center">
 
-Phenytoin is highly protein-bound (~90% to albumin). In hypoalbuminemia, the measured total phenytoin level underestimates the free (active) fraction. The **Winter-Tozer equation** corrects for this:
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
+![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
+![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
 
-- **Normal renal function:** `Corrected = Measured / ((0.25 × albumin) + 0.1)`
-- **Renal impairment (CrCl <10):** `Corrected = Measured / ((0.1 × albumin) + 0.1)`
+</div>
 
-Phenytoin follows **Michaelis-Menten (zero-order) kinetics** at therapeutic doses, meaning small dose increases can cause disproportionately large concentration increases.
+---
 
-## Key Formulas
+## 📖 What It Does
 
-| Parameter | Formula |
-|-----------|---------|
-| Winter-Tozer (normal) | `Corrected = Measured / ((0.25 × albumin) + 0.1)` |
-| Winter-Tozer (renal) | `Corrected = Measured / ((0.1 × albumin) + 0.1)` |
-| Michaelis-Menten | `Css = (Vmax × Dose) / (Km + Dose)` |
-| Vmax/Km estimation | Two-level method using simultaneous equations |
-| Loading dose | `LD = (Vd × Ctarget) / F` |
+Phenytoin Winter-Tozer Correction Calculator
 
-## Therapeutic Ranges
+Corrects measured total phenytoin levels for hypoalbuminemia and renal impairment.
+Implements Michaelis-Menten kinetics for dose adjustment.
 
-| Measurement | Range |
-|-------------|-------|
-| Total phenytoin | 10-20 mg/L |
-| Free phenytoin | 1-2 mg/L |
-| Corrected phenytoin | 10-20 mg/L (use for dosing decisions) |
+Key formulas:
+- Normal albumin: Corrected = Measured / ((0.25 * albumin) + 0.1)
+- Renal impairment (CrCl <10): Corrected = Measured / ((0.1 * albumin) + 0.1)
+- Michaelis-Menten: Css = (Vmax * Dose/tau) / (Km + Dose/tau)
+- Steady state estimation from two levels
+- Loading dose calculation
 
-## Installation
+Therapeutic range: 10-20 mg/L (total), 1-2 mg/L (free)
 
-```bash
-# No dependencies required - Python 3.8+ stdlib only
-cd phenytoin-winter-tozer-corrector
-```
+Author: Dr. Abu Suraih Sakhri
+License: MIT
 
-## Usage
+---
 
-### Correct Phenytoin Level
-```bash
-python cli.py correct --phenytoin 8.0 --albumin 2.5
-python cli.py correct --phenytoin 8.0 --albumin 2.5 --crcl 8
-```
+## ⚙️ Key Capabilities & Algorithmic Modules
 
-### Predict Steady-State from Dose
-```bash
-python cli.py steady-state --dose 300
-python cli.py steady-state --dose 400 --vmax 500 --km 5.0
-```
+### 🔬 Analytical Functions
 
-### Estimate Individual Vmax/Km
-```bash
-python cli.py estimate-params --dose1 200 --css1 8.5 --dose2 300 --css2 18.2
-```
+- **`correct_phenytoin_normal()`**: Correct phenytoin level for hypoalbuminemia (normal renal function).
 
-### Calculate Loading Dose
-```bash
-python cli.py loading-dose --target 15 --weight 70
-```
+Winter-Tozer equation:
+Corrected = Measured / ((0.25 * albumin) + 0.1)
 
-### Full Assessment
-```bash
-python cli.py assess --phenytoin 8.0 --albumin 2.5
-python cli.py assess --phenytoin 12.0 --albumin 3.0 --crcl 8 --dose 300 --weight 70
-```
+Args:
+    measured_phenytoin_mg_l: Measured total phenytoin in mg/L
+    albumin_g_dl: Serum albumin in g/dL
+    
+Returns:
+    Dictionary with corrected phenytoin and interpretation
+- **`correct_phenytoin_renal()`**: Correct phenytoin level for hypoalbuminemia with renal impairment.
 
-## Output Format
+Modified Winter-Tozer for ESRD/CrCl <10:
+Corrected = Measured / ((0.1 * albumin) + 0.1)
 
-All commands output JSON. Example:
-```json
-{
-  "measured_phenytoin_mg_l": 8.0,
-  "albumin_g_dl": 2.5,
-  "corrected_phenytoin_mg_l": 11.4,
+Args:
+    measured_phenytoin_mg_l: Measured total phenytoin in mg/L
+    albumin_g_dl: Serum albumin in g/dL
+    
+Returns:
+    Dictionary with corrected phenytoin and interpretation
+- **`correct_phenytoin()`**: Correct phenytoin level using appropriate Winter-Tozer equation.
+
+Automatically selects renal-adjusted formula if CrCl < 10 mL/min.
+
+Args:
+    measured_phenytoin_mg_l: Measured total phenytoin in mg/L
+    albumin_g_dl: Serum albumin in g/dL
+    crcl_ml_min: Creatinine clearance in mL/min (optional)
+    
+Returns:
+    Dictionary with corrected phenytoin and interpretation
+- **`interpret_phenytoin()`**: Interpret corrected phenytoin concentration.
+
+Args:
+    corrected_mg_l: Corrected total phenytoin in mg/L
+    
+Returns:
+    Dictionary with interpretation
+- **`calculate_steady_state_mm()`**: Calculate steady-state phenytoin concentration using Michaelis-Menten kinetics.
+
+Css = (Vmax * Dose_rate) / (Km + Dose_rate)
+where Dose_rate = daily_dose_mg (since Vmax is in mg/day)
+
+More precisely:
+Css = (Vmax * D/tau) / (Km + D/tau)
+For once-daily: Css = (Vmax * daily_dose) / (Km * F * 24 + daily_dose)
+Simplified: Css = (Vmax * daily_dose) / (Km + daily_dose)
+
+Args:
+    daily_dose_mg: Daily phenytoin dose in mg
+    vmax_mg_per_day: Maximum metabolism rate in mg/day (default 490 mg/day for 70kg)
+    km_mg_l: Michaelis constant in mg/L (default 4.0)
+    
+Returns:
+    Dictionary with steady-state concentration
+
+---
+
+## 📐 Mathematical Formulation & Logic
+
+```text
+  Key formulas:
   "correction_formula": "Measured / ((0.25 * albumin) + 0.1)",
-  "renal_adjustment": false,
-  "interpretation": {
-    "status": "THERAPEUTIC",
-    "recommendation": "Within therapeutic range. Continue current regimen."
-  }
-}
+  "correction_formula": "Measured / ((0.1 * albumin) + 0.1)",
+  Automatically selects renal-adjusted formula if CrCl < 10 mL/min.
+  risk = "Seizure breakthrough risk"
 ```
 
-## Tests
+---
+
+## 💻 CLI Quickstart & Usage
+
+### 1. Guided Interactive Mode
+```bash
+python cli.py
+```
+
+### 2. Direct Parameterized Evaluation
+```bash
+python cli.py --input data.csv
+```
+
+### Parameter Reference
+- `--interactive`: Launch guided terminal interactive wizard.
+- `--input <path>`: Evaluate input from JSON or CSV specification.
+- `--json`: Output deterministic structured results in JSON format.
+
+### Input Data Schema
+
+| Field | Description | Requirement |
+|:------|:------------|:------------|
+| `Patient_ID` | Parameter / observation metric | Required |
+| `v1` | Parameter / observation metric | Required |
+| `v2` | Parameter / observation metric | Required |
+| `v3` | Parameter / observation metric | Required |
+
+---
+
+## 🛡️ Security & Enterprise Architecture
+
+* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
+* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
+* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
+* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
+* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
+
+---
+
+## 🧪 Testing & Verification
+
+Run the automated test suite:
 
 ```bash
-python -m pytest test_winter_tozer.py -v
+pytest -v
 ```
 
-## Disclaimer
+Execute high-throughput batch simulation benchmarks:
 
-**FOR EDUCATIONAL AND RESEARCH USE ONLY.** This calculator is not a substitute for clinical pharmacist review. Phenytoin dosing requires consideration of drug interactions, hepatic function, and individual patient factors.
+```bash
+python simulator.py --tasks 1000 --concurrency 8
+```
 
-## References
+---
 
-- Winter ME, Tozer TN. Phenytoin. In: Evans WE, et al., eds. *Applied Pharmacokinetics*. 3rd ed. Vancouver, WA: Applied Therapeutics; 1986.
-- Anderson GD. A mechanistic approach to antiepileptic drug interactions. *Ann Pharmacother*. 1998;32(5):554-563.
-- Tozer TN, Winter ME. Phenytoin. In: Burton ME, et al., eds. *Applied Clinical Pharmacokinetics*. 2nd ed. New York: McGraw-Hill; 2005.
+## 🐳 Container Deployment
 
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
+```bash
+docker build -t phenytoin-winter-tozer-corrector .
+docker run -p 8000:8000 phenytoin-winter-tozer-corrector
+```
