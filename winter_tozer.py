@@ -564,31 +564,31 @@ def main(argv=None):
         description="Phenytoin Winter-Tozer Correction Calculator"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    
+
     # --- Correct command ---
     correct_parser = subparsers.add_parser("correct", help="Correct phenytoin for albumin")
     correct_parser.add_argument("--phenytoin", type=float, required=True, help="Measured phenytoin mg/L")
     correct_parser.add_argument("--albumin", type=float, required=True, help="Serum albumin g/dL")
     correct_parser.add_argument("--crcl", type=float, help="CrCl mL/min (if <10, uses renal formula)")
-    
+
     # --- Steady-state command ---
     ss_parser = subparsers.add_parser("steady-state", help="Predict steady-state from dose")
     ss_parser.add_argument("--dose", type=float, required=True, help="Daily dose in mg")
     ss_parser.add_argument("--vmax", type=float, help="Vmax mg/day (default population)")
     ss_parser.add_argument("--km", type=float, help="Km mg/L (default 4.0)")
-    
+
     # --- Estimate Vmax/Km command ---
     est_parser = subparsers.add_parser("estimate-params", help="Estimate Vmax/Km from two levels")
     est_parser.add_argument("--dose1", type=float, required=True, help="First daily dose mg")
     est_parser.add_argument("--css1", type=float, required=True, help="Css at first dose mg/L")
     est_parser.add_argument("--dose2", type=float, required=True, help="Second daily dose mg")
     est_parser.add_argument("--css2", type=float, required=True, help="Css at second dose mg/L")
-    
+
     # --- Loading dose command ---
     ld_parser = subparsers.add_parser("loading-dose", help="Calculate loading dose")
     ld_parser.add_argument("--target", type=float, required=True, help="Target concentration mg/L")
     ld_parser.add_argument("--weight", type=float, default=70.0, help="Weight in kg (default 70)")
-    
+
     # --- Assess command ---
     assess_parser = subparsers.add_parser("assess", help="Full assessment")
     assess_parser.add_argument("--phenytoin", type=float, required=True, help="Measured phenytoin mg/L")
@@ -596,33 +596,84 @@ def main(argv=None):
     assess_parser.add_argument("--crcl", type=float, help="CrCl mL/min")
     assess_parser.add_argument("--dose", type=float, help="Current daily dose mg")
     assess_parser.add_argument("--weight", type=float, default=70.0, help="Weight kg")
-    
+
+    # --- Audit command ---
+    audit_parser = subparsers.add_parser("audit", help="Log an audit event")
+    audit_parser.add_argument("--task-id", type=str, required=True, help="Task identifier for the audit event")
+    audit_parser.add_argument("--actor", type=str, default="cli", help="Actor initiating the event")
+    audit_parser.add_argument("--event-type", type=str, default="CLI_AUDIT_EVENT", help="Type of audit event")
+
+    # --- Chat command ---
+    chat_parser = subparsers.add_parser("chat", help="Query the LLM reasoning adapter")
+    chat_parser.add_argument("query", nargs="+", help="Query string for the LLM")
+
+    # --- Verify audit command ---
+    verify_parser = subparsers.add_parser("verify-audit", help="Verify HMAC-SHA256 audit trail integrity")
+
+    # --- Serve command (FastAPI) ---
+    serve_parser = subparsers.add_parser("serve", help="Start FastAPI REST server")
+    serve_parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind (default 0.0.0.0)")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind (default 8000)")
+
     args = parser.parse_args(argv)
-    
+
     if args.command == "correct":
         result = correct_phenytoin(args.phenytoin, args.albumin, args.crcl)
         print(json.dumps(result, indent=2))
-    
+
     elif args.command == "steady-state":
         v = args.vmax if args.vmax else DEFAULT_VMAX * 70
         k = args.km if args.km else DEFAULT_KM
         result = calculate_steady_state_mm(args.dose, v, k)
         print(json.dumps(result, indent=2))
-    
+
     elif args.command == "estimate-params":
         result = estimate_vmax_km_from_two_levels(args.dose1, args.css1, args.dose2, args.css2)
         print(json.dumps(result, indent=2))
-    
+
     elif args.command == "loading-dose":
         result = calculate_loading_dose(args.target, weight_kg=args.weight)
         print(json.dumps(result, indent=2))
-    
+
     elif args.command == "assess":
         result = full_phenytoin_assessment(
             args.phenytoin, args.albumin, args.crcl, args.dose, args.weight
         )
         print(json.dumps(result, indent=2))
-    
+
+    elif args.command == "audit":
+        from agents.base import AuditLogger
+        entry = AuditLogger.log(
+            actor=args.actor,
+            actor_tier="cli",
+            event_type=args.event_type,
+            details={"task_id": args.task_id, "source": "cli"}
+        )
+        print(json.dumps(entry, indent=2))
+
+    elif args.command == "chat":
+        from agents.supervisor import SystemSupervisor
+        supervisor = SystemSupervisor(model_provider="mock")
+        query = " ".join(args.query)
+        response = supervisor.query_supervisory_chat(query)
+        print(json.dumps({"query": query, "response": response}, indent=2))
+
+    elif args.command == "verify-audit":
+        from agents.base import AuditLogger
+        valid = AuditLogger.verify_integrity()
+        trail_len = len(AuditLogger.get_trail())
+        result = {"audit_valid": valid, "trail_length": trail_len}
+        print(json.dumps(result, indent=2))
+
+    elif args.command == "serve":
+        try:
+            import uvicorn
+            from agents.api import app
+            uvicorn.run(app, host=args.host, port=args.port)
+        except ImportError:
+            print("Error: uvicorn and fastapi required. Install with: pip install fastapi uvicorn", file=sys.stderr)
+            return 1
+
     return 0
 
 

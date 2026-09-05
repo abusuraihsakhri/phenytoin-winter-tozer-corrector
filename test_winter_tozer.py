@@ -1,6 +1,8 @@
 """
 Tests for Phenytoin Winter-Tozer Correction Calculator.
 """
+import os
+import warnings
 import pytest
 from winter_tozer import (
     correct_phenytoin_normal,
@@ -315,3 +317,80 @@ class TestCLI:
     def test_assess_command(self):
         ret = main(["assess", "--phenytoin", "12.0", "--albumin", "3.5"])
         assert ret == 0
+
+    def test_audit_command(self):
+        ret = main(["audit", "--task-id", "TEST-AUDIT-001"])
+        assert ret == 0
+
+    def test_audit_command_with_actor(self):
+        ret = main(["audit", "--task-id", "TEST-AUDIT-002", "--actor", "test-user", "--event-type", "TEST_EVENT"])
+        assert ret == 0
+
+    def test_chat_command(self):
+        ret = main(["chat", "Explain", "phenytoin", "kinetics"])
+        assert ret == 0
+
+    def test_verify_audit_command(self):
+        ret = main(["verify-audit"])
+        assert ret == 0
+
+
+# ============================================================================
+# Security Tests
+# ============================================================================
+
+class TestSecurity:
+    def test_audit_trail_no_hardcoded_key(self):
+        """Verify that AuditTrail generates a random key when no secret is provided."""
+        from agents.base import AuditTrail
+        # Ensure no env var is set for this test
+        original = os.environ.pop("AUDIT_SECRET_KEY", None)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                trail = AuditTrail()
+            # Key should be 32 bytes (random), not a hardcoded string
+            assert len(trail.secret_key) == 32
+        finally:
+            if original is not None:
+                os.environ["AUDIT_SECRET_KEY"] = original
+
+    def test_audit_trail_uses_env_key_when_set(self):
+        """Verify that AuditTrail uses the AUDIT_SECRET_KEY env var when set."""
+        from agents.base import AuditTrail
+        original = os.environ.get("AUDIT_SECRET_KEY")
+        os.environ["AUDIT_SECRET_KEY"] = "test-secret-key-for-unit-test"
+        try:
+            trail = AuditTrail()
+            assert trail.secret_key == b"test-secret-key-for-unit-test"
+        finally:
+            if original is not None:
+                os.environ["AUDIT_SECRET_KEY"] = original
+            else:
+                del os.environ["AUDIT_SECRET_KEY"]
+
+    def test_phi_guard_blocks_mrn(self):
+        from agents.base import PHIGuard, SecurityException
+        with pytest.raises(SecurityException):
+            PHIGuard.assert_no_phi("Patient MRN-12345678")
+
+    def test_phi_guard_blocks_ssn(self):
+        from agents.base import PHIGuard, SecurityException
+        with pytest.raises(SecurityException):
+            PHIGuard.assert_no_phi("SSN: 123-45-6789")
+
+    def test_phi_guard_blocks_email(self):
+        from agents.base import PHIGuard, SecurityException
+        with pytest.raises(SecurityException):
+            PHIGuard.assert_no_phi("Contact patient@example.com for results")
+
+    def test_phi_guard_allows_clean_text(self):
+        from agents.base import PHIGuard
+        # Should not raise
+        PHIGuard.assert_no_phi("Analytical assay specimen KEY-001 optimal")
+
+    def test_phi_redaction(self):
+        from agents.base import PHIGuard
+        redacted = PHIGuard.redact_phi("Patient MRN-12345678 and SSN 123-45-6789")
+        assert "MRN" not in redacted or "REDACTED" in redacted
+        assert "123-45-6789" not in redacted

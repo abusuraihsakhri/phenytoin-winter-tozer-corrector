@@ -1,6 +1,6 @@
 # Phenytoin Winter Tozer Corrector
 
-> **Domain:** Clinical Pharmacology & Precision Pharmacotherapy  
+> **Domain:** Clinical Pharmacology & Precision Pharmacotherapy
 > **Reference Guidelines & Standards:** `CPIC Guidelines & FDA Table of Pharmacogenomic Biomarkers`
 
 <div align="center">
@@ -24,9 +24,9 @@ Corrects measured total phenytoin levels for hypoalbuminemia and renal impairmen
 Implements Michaelis-Menten kinetics for dose adjustment.
 
 Key formulas:
-- Normal albumin: Corrected = Measured / ((0.25 * albumin) + 0.1)
-- Renal impairment (CrCl <10): Corrected = Measured / ((0.1 * albumin) + 0.1)
-- Michaelis-Menten: Css = (Vmax * Dose/tau) / (Km + Dose/tau)
+- Normal albumin: `Corrected = Measured / ((0.25 * albumin) + 0.1)`
+- Renal impairment (CrCl <10): `Corrected = Measured / ((0.1 * albumin) + 0.1)`
+- Michaelis-Menten: `Css = (Vmax * Dose/tau) / (Km + Dose/tau)`
 - Steady state estimation from two levels
 - Loading dose calculation
 
@@ -42,112 +42,94 @@ License: MIT
 ### 🔬 Analytical Functions
 
 - **`correct_phenytoin_normal()`**: Correct phenytoin level for hypoalbuminemia (normal renal function).
-
-Winter-Tozer equation:
-Corrected = Measured / ((0.25 * albumin) + 0.1)
-
-Args:
-    measured_phenytoin_mg_l: Measured total phenytoin in mg/L
-    albumin_g_dl: Serum albumin in g/dL
-    
-Returns:
-    Dictionary with corrected phenytoin and interpretation
 - **`correct_phenytoin_renal()`**: Correct phenytoin level for hypoalbuminemia with renal impairment.
-
-Modified Winter-Tozer for ESRD/CrCl <10:
-Corrected = Measured / ((0.1 * albumin) + 0.1)
-
-Args:
-    measured_phenytoin_mg_l: Measured total phenytoin in mg/L
-    albumin_g_dl: Serum albumin in g/dL
-    
-Returns:
-    Dictionary with corrected phenytoin and interpretation
-- **`correct_phenytoin()`**: Correct phenytoin level using appropriate Winter-Tozer equation.
-
-Automatically selects renal-adjusted formula if CrCl < 10 mL/min.
-
-Args:
-    measured_phenytoin_mg_l: Measured total phenytoin in mg/L
-    albumin_g_dl: Serum albumin in g/dL
-    crcl_ml_min: Creatinine clearance in mL/min (optional)
-    
-Returns:
-    Dictionary with corrected phenytoin and interpretation
+- **`correct_phenytoin()`**: Auto-selects renal-adjusted formula if CrCl < 10 mL/min.
 - **`interpret_phenytoin()`**: Interpret corrected phenytoin concentration.
-
-Args:
-    corrected_mg_l: Corrected total phenytoin in mg/L
-    
-Returns:
-    Dictionary with interpretation
 - **`calculate_steady_state_mm()`**: Calculate steady-state phenytoin concentration using Michaelis-Menten kinetics.
-
-Css = (Vmax * Dose_rate) / (Km + Dose_rate)
-where Dose_rate = daily_dose_mg (since Vmax is in mg/day)
-
-More precisely:
-Css = (Vmax * D/tau) / (Km + D/tau)
-For once-daily: Css = (Vmax * daily_dose) / (Km * F * 24 + daily_dose)
-Simplified: Css = (Vmax * daily_dose) / (Km + daily_dose)
-
-Args:
-    daily_dose_mg: Daily phenytoin dose in mg
-    vmax_mg_per_day: Maximum metabolism rate in mg/day (default 490 mg/day for 70kg)
-    km_mg_l: Michaelis constant in mg/L (default 4.0)
-    
-Returns:
-    Dictionary with steady-state concentration
+- **`estimate_vmax_km_from_two_levels()`**: Estimate individual Vmax and Km from two steady-state dose/concentration pairs.
+- **`predict_dose_for_target_css()`**: Predict daily dose needed to achieve target steady-state concentration.
+- **`calculate_loading_dose()`**: Calculate phenytoin loading dose.
+- **`saturation_kinetics_warning()`**: Warn about phenytoin saturation kinetics.
+- **`full_phenytoin_assessment()`**: Complete phenytoin assessment with correction and dosing guidance.
 
 ---
 
-## 📐 Mathematical Formulation & Logic
+## 💻 Installation
 
-```text
-  Key formulas:
-  "correction_formula": "Measured / ((0.25 * albumin) + 0.1)",
-  "correction_formula": "Measured / ((0.1 * albumin) + 0.1)",
-  Automatically selects renal-adjusted formula if CrCl < 10 mL/min.
-  risk = "Seizure breakthrough risk"
+```bash
+# Clone the repository
+git clone https://github.com/abusuraihsakhri/phenytoin-winter-tozer-corrector.git
+cd phenytoin-winter-tozer-corrector
+
+# Install dependencies (for API server)
+pip install fastapi uvicorn pydantic pytest
 ```
 
 ---
 
 ## 💻 CLI Quickstart & Usage
 
-### 1. Guided Interactive Mode
+### 1. Correct Phenytoin Level
 ```bash
-python cli.py
+python cli.py correct --phenytoin 8.0 --albumin 2.5
+python cli.py correct --phenytoin 8.0 --albumin 2.5 --crcl 5
 ```
 
-### 2. Direct Parameterized Evaluation
+### 2. Predict Steady-State Concentration
 ```bash
-python cli.py --input data.csv
+python cli.py steady-state --dose 300
+python cli.py steady-state --dose 300 --vmax 600 --km 5.0
 ```
 
-### Parameter Reference
-- `--interactive`: Launch guided terminal interactive wizard.
-- `--input <path>`: Evaluate input from JSON or CSV specification.
-- `--json`: Output deterministic structured results in JSON format.
+### 3. Estimate Vmax/Km from Two Levels
+```bash
+python cli.py estimate-params --dose1 200 --css1 333.33 --dose2 300 --css2 375.0
+```
 
-### Input Data Schema
+### 4. Calculate Loading Dose
+```bash
+python cli.py loading-dose --target 15 --weight 70
+```
 
-| Field | Description | Requirement |
-|:------|:------------|:------------|
-| `Patient_ID` | Parameter / observation metric | Required |
-| `v1` | Parameter / observation metric | Required |
-| `v2` | Parameter / observation metric | Required |
-| `v3` | Parameter / observation metric | Required |
+### 5. Full Assessment
+```bash
+python cli.py assess --phenytoin 12.0 --albumin 3.5 --dose 300
+```
+
+### 6. Audit Operations
+```bash
+python cli.py audit --task-id "TASK-001"
+python cli.py chat "Explain phenytoin kinetics"
+python cli.py verify-audit
+```
+
+### 7. Start REST API Server
+```bash
+python cli.py serve --host 0.0.0.0 --port 8000
+```
 
 ---
 
 ## 🛡️ Security & Enterprise Architecture
 
-* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
+* **Zero-PHI Outbound Interceptor:** Active regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
 * **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
 * **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
-* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
 * **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
+
+### Security Configuration
+
+Set the `AUDIT_SECRET_KEY` environment variable for persistent tamper-evident audit across restarts:
+
+```bash
+# Linux/macOS
+export AUDIT_SECRET_KEY="your-secure-random-key-here"
+
+# Windows
+set AUDIT_SECRET_KEY=your-secure-random-key-here
+```
+
+Without this variable, an ephemeral random key is generated at startup (audit entries will not persist across restarts).
 
 ---
 
@@ -162,7 +144,7 @@ pytest -v
 Execute high-throughput batch simulation benchmarks:
 
 ```bash
-python simulator.py --tasks 1000 --concurrency 8
+python simulator.py 1000
 ```
 
 ---
@@ -173,3 +155,20 @@ python simulator.py --tasks 1000 --concurrency 8
 docker build -t phenytoin-winter-tozer-corrector .
 docker run -p 8000:8000 phenytoin-winter-tozer-corrector
 ```
+
+---
+
+## 📐 Mathematical Formulation
+
+```
+Winter-Tozer (normal):  Corrected = Measured / ((0.25 * albumin) + 0.1)
+Winter-Tozer (renal):   Corrected = Measured / ((0.1 * albumin) + 0.1)
+Michaelis-Menten:       Css = (Vmax * Dose) / (Km * F * 1000 + Dose)
+Loading Dose:           LD = (Vd * target * weight) / F
+```
+
+---
+
+## ⚠️ Disclaimer
+
+**FOR EDUCATIONAL/RESEARCH USE ONLY.** Not a substitute for clinical pharmacist review.

@@ -1,6 +1,40 @@
+# Python bytecode
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
 .pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# Distribution / build
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Project-specific outputs
 results.csv
 output.csv
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
