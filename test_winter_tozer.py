@@ -160,19 +160,18 @@ class TestMichaelisMenten:
         assert high["predicted_css_mg_l"] > low["predicted_css_mg_l"]
 
     def test_saturation_nonlinearity(self):
-        # M-M kinetics: concentration approaches Vmax asymptotically
-        # At very high doses, increases become smaller (saturation)
+        # With saturable elimination, concentrations increase disproportionately
+        # as dose approaches Vmax/F.
         css_low = calculate_steady_state_mm(100)["predicted_css_mg_l"]
         css_mid = calculate_steady_state_mm(200)["predicted_css_mg_l"]
         css_high = calculate_steady_state_mm(400)["predicted_css_mg_l"]
         # All should be positive and increasing
         assert css_mid > css_low
         assert css_high > css_mid
-        # But the ratio of css increase to dose increase should decrease
-        # (diminishing returns at higher doses = saturation)
+        # Concentration per administered mg increases near saturation.
         ratio_low = css_mid / 200  # css per mg at low dose
         ratio_high = css_high / 400  # css per mg at high dose
-        assert ratio_high < ratio_low  # Saturation: less efficient at higher doses
+        assert ratio_high > ratio_low
 
     def test_custom_params(self):
         result = calculate_steady_state_mm(300, vmax_mg_per_day=600, km_mg_l=5.0)
@@ -189,13 +188,13 @@ class TestMichaelisMenten:
 
 class TestVmaxKmEstimation:
     def test_estimation(self):
-        # Use data consistent with Css = (Vmax*D)/(Km+D)
-        # With Vmax=500, Km=100: D=200->Css=333.3, D=300->Css=375
-        result = estimate_vmax_km_from_two_levels(200, 333.33, 300, 375.0)
+        # Forward model: Css=Km*F*D/(Vmax-F*D).
+        # Vmax=490 mg/day, Km=4 mg/L, F=0.95.
+        result = estimate_vmax_km_from_two_levels(200, 4*190/300, 300, 4*285/205)
         assert result["estimated_vmax_mg_per_day"] > 0
         assert result["estimated_km_mg_l"] > 0
-        assert abs(result["estimated_vmax_mg_per_day"] - 500) < 1
-        assert abs(result["estimated_km_mg_l"] - 100) < 1
+        assert abs(result["estimated_vmax_mg_per_day"] - 490) < 1
+        assert abs(result["estimated_km_mg_l"] - 4) < 0.01
 
     def test_same_concentrations_raises(self):
         with pytest.raises(ValueError):
@@ -306,8 +305,8 @@ class TestCLI:
         assert ret == 0
 
     def test_estimate_params_command(self):
-        ret = main(["estimate-params", "--dose1", "200", "--css1", "333.33",
-                     "--dose2", "300", "--css2", "375.0"])
+        ret = main(["estimate-params", "--dose1", "200", "--css1", "2.533333333333",
+                     "--dose2", "300", "--css2", "5.560975609756"])
         assert ret == 0
 
     def test_loading_dose_command(self):
@@ -394,3 +393,52 @@ class TestSecurity:
         redacted = PHIGuard.redact_phi("Patient MRN-12345678 and SSN 123-45-6789")
         assert "MRN" not in redacted or "REDACTED" in redacted
         assert "123-45-6789" not in redacted
+
+
+# Regression cases for the concentration model and safety checks
+
+def test_mm_forward_inverse_round_trip():
+    css = calculate_steady_state_mm(300, vmax_mg_per_day=490, km_mg_l=4)["predicted_css_mg_l"]
+    assert abs(css - 5.6) < 0.1
+    predicted = predict_dose_for_target_css(5.560975609756, vmax_mg_per_day=490, km_mg_l=4)
+    assert abs(predicted["predicted_daily_dose_mg"] - 300) <= 1
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -1.0])
+def test_non_finite_total_rejected(bad):
+    with pytest.raises(ValueError):
+        correct_phenytoin_normal(bad, 3.0)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -2.0, 0.0])
+def test_non_finite_albumin_rejected(bad):
+    with pytest.raises(ValueError):
+        correct_phenytoin_renal(10.0, bad)
+
+
+def test_renal_crcl_invalid_rejected():
+    with pytest.raises(ValueError):
+        correct_phenytoin(10.0, 3.0, float("nan"))
+
+
+def test_saturating_dose_has_no_finite_steady_state():
+    with pytest.raises(ValueError):
+        calculate_steady_state_mm(600, vmax_mg_per_day=490)
+
+
+def test_high_saturation_warning():
+    result = saturation_kinetics_warning(400, 150)
+    assert result["risk_level"] == "HIGH"
+    assert any("no finite steady state" in warning for warning in result["warnings"])
+
+
+def test_assessment_never_generates_unrequested_loading_dose():
+    result = full_phenytoin_assessment(2.0, 3.0)
+    assert result["loading_dose"] is None
+    assert "Research" in result["disclaimer"]
+
+
+def test_interpretation_not_automatic_prescription():
+    for level in (5.0, 15.0, 25.0, 35.0, 45.0):
+        text = interpret_phenytoin(level)["recommendation"].lower()
+        assert "increase dose" not in text and "reduce dose" not in text and "hold dose" not in text
