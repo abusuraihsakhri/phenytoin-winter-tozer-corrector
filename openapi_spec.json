@@ -1,114 +1,145 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Phenytoin Winter Tozer Corrector API",
-    "description": "Enterprise Distributed Component Platform (Clinical & Cryptographic AI) adhering to CAP / CLSI / NIST Standards.",
-    "version": "3.0.0-ENTERPRISE",
-    "contact": {
-      "name": "Dr. Abu Suraih Sakhri",
-      "url": "https://github.com/abusuraihsakhri"
-    }
+    "title": "Phenytoin Winter–Tozer Calculator API",
+    "version": "1.1.0",
+    "description": "Research-only correction estimates and optional authenticated audit demo. Live schema is at /openapi.json."
   },
   "paths": {
     "/health": {
       "get": {
-        "summary": "Health and metadata check",
+        "summary": "Health check",
         "responses": {
           "200": {
-            "description": "System optimal"
+            "description": "Service status JSON"
           }
         }
       }
     },
     "/metrics": {
       "get": {
-        "summary": "Prometheus operational metrics",
+        "summary": "Operational counters",
         "responses": {
           "200": {
-            "description": "Prometheus text metrics"
+            "description": "JSON counts (not Prometheus text)"
+          }
+        }
+      }
+    },
+    "/api/correct": {
+      "post": {
+        "summary": "Estimate corrected total phenytoin concentration",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "measured_phenytoin_mg_l": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "albumin_g_dl": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "crcl_ml_min": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "measured_phenytoin_mg_l",
+                  "albumin_g_dl"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Correction estimate, formula and conventional-range category"
+          },
+          "422": {
+            "description": "Invalid input"
           }
         }
       }
     },
     "/api/audit": {
       "post": {
-        "summary": "Dispatch task payload across specialized workers",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "task_id": {
-                    "type": "string"
-                  },
-                  "target_identifier": {
-                    "type": "string"
-                  },
-                  "primary_metric": {
-                    "type": "number"
-                  },
-                  "secondary_metric": {
-                    "type": "number"
-                  },
-                  "status_descriptor": {
-                    "type": "string"
-                  },
-                  "is_critical_flag": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "task_id",
-                  "target_identifier",
-                  "primary_metric"
-                ]
-              }
-            }
+        "summary": "Demo audit task",
+        "security": [
+          {
+            "ApiKeyAuth": []
           }
-        },
+        ],
         "responses": {
           "200": {
-            "description": "Consensus dossier with HMAC signature"
+            "description": "Audit dossier"
+          },
+          "401": {
+            "description": "Bad API key"
+          },
+          "503": {
+            "description": "Key not configured"
           }
         }
       }
     },
     "/api/chat": {
       "post": {
-        "summary": "Air-gapped supervisory conversational assistant",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "query"
-                ]
-              }
-            }
+        "summary": "Mock-only chat",
+        "security": [
+          {
+            "ApiKeyAuth": []
           }
-        },
+        ],
         "responses": {
           "200": {
-            "description": "Supervisory response"
+            "description": "Mock response"
+          },
+          "401": {
+            "description": "Bad API key"
+          },
+          "503": {
+            "description": "Key not configured"
           }
         }
       }
     },
     "/api/audit/logs": {
       "get": {
-        "summary": "Retrieve and cryptographically verify HMAC audit trail",
+        "summary": "In-process audit entries and HMAC verification",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Cryptographic audit trail"
+            "description": "Audit entries and verification status"
+          },
+          "401": {
+            "description": "Bad API key"
+          },
+          "503": {
+            "description": "Key not configured"
           }
         }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
       }
     }
   }
