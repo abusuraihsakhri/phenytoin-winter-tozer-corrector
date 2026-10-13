@@ -1,17 +1,15 @@
-version: '3.8'
-
 services:
   phenytoin-winter-tozer-corrector:
     build: .
-    container_name: phenytoin-winter-tozer-corrector
     ports:
       - "8000:8000"
     environment:
-      - AUDIT_SECRET_KEY=phenytoin-winter-tozer-corrector-prod-audit-key-2026
-      - MODEL_PROVIDER=mock
+      AUDIT_SECRET_KEY: ${AUDIT_SECRET_KEY:?Set a strong private AUDIT_SECRET_KEY}
+      AUDIT_API_KEY: ${AUDIT_API_KEY:?Set a strong private AUDIT_API_KEY}
+      MODEL_PROVIDER: mock
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
