@@ -53,6 +53,14 @@ PHENYTOIN_F = 0.95                  # Oral bioavailability
 # Winter-Tozer Correction
 # ============================================================================
 
+def _validate_correction_inputs(measured_phenytoin_mg_l: float, albumin_g_dl: float) -> None:
+    """Reject physiologically impossible and non-finite inputs."""
+    if not math.isfinite(measured_phenytoin_mg_l) or measured_phenytoin_mg_l < 0:
+        raise ValueError("Measured phenytoin must be finite and non-negative")
+    if not math.isfinite(albumin_g_dl) or albumin_g_dl <= 0:
+        raise ValueError("Albumin must be finite and positive")
+
+
 def correct_phenytoin_normal(
     measured_phenytoin_mg_l: float,
     albumin_g_dl: float
@@ -70,10 +78,7 @@ def correct_phenytoin_normal(
     Returns:
         Dictionary with corrected phenytoin and interpretation
     """
-    if albumin_g_dl <= 0:
-        raise ValueError("Albumin must be positive")
-    if measured_phenytoin_mg_l < 0:
-        raise ValueError("Measured phenytoin must be non-negative")
+    _validate_correction_inputs(measured_phenytoin_mg_l, albumin_g_dl)
     
     binding_fraction = (0.25 * albumin_g_dl) + 0.1
     corrected = measured_phenytoin_mg_l / binding_fraction
@@ -105,10 +110,7 @@ def correct_phenytoin_renal(
     Returns:
         Dictionary with corrected phenytoin and interpretation
     """
-    if albumin_g_dl <= 0:
-        raise ValueError("Albumin must be positive")
-    if measured_phenytoin_mg_l < 0:
-        raise ValueError("Measured phenytoin must be non-negative")
+    _validate_correction_inputs(measured_phenytoin_mg_l, albumin_g_dl)
     
     binding_fraction = (0.1 * albumin_g_dl) + 0.1
     corrected = measured_phenytoin_mg_l / binding_fraction
@@ -141,6 +143,8 @@ def correct_phenytoin(
     Returns:
         Dictionary with corrected phenytoin and interpretation
     """
+    if crcl_ml_min is not None and (not math.isfinite(crcl_ml_min) or crcl_ml_min < 0):
+        raise ValueError("Creatinine clearance must be finite and non-negative")
     if crcl_ml_min is not None and crcl_ml_min < 10:
         result = correct_phenytoin_renal(measured_phenytoin_mg_l, albumin_g_dl)
     else:
@@ -163,28 +167,28 @@ def interpret_phenytoin(corrected_mg_l: float) -> Dict[str, Any]:
     Returns:
         Dictionary with interpretation
     """
-    if corrected_mg_l < 0:
-        raise ValueError("Corrected phenytoin must be non-negative")
+    if not math.isfinite(corrected_mg_l) or corrected_mg_l < 0:
+        raise ValueError("Corrected phenytoin must be finite and non-negative")
     
     if corrected_mg_l < TOTAL_THERAPEUTIC_LOW:
         status = "SUBTHERAPEUTIC"
-        recommendation = "Increase dose. Phenytoin below therapeutic range (10-20 mg/L)."
+        recommendation = "Below conventional corrected-total range; review timing, adherence, clinical response and measured free concentration before considering dose changes."
         risk = "Seizure breakthrough risk"
     elif corrected_mg_l <= TOTAL_THERAPEUTIC_HIGH:
         status = "THERAPEUTIC"
-        recommendation = "Within therapeutic range. Continue current regimen."
+        recommendation = "Within conventional corrected-total range; interpret with symptoms and measured free concentration where available."
         risk = "Within therapeutic range"
     elif corrected_mg_l <= 30.0:
         status = "MILDLY_TOXIC"
-        recommendation = "Reduce dose. Monitor for toxicity symptoms (nystagmus, ataxia)."
+        recommendation = "Above conventional corrected-total range; review symptoms and obtain a measured free concentration."
         risk = "Early toxicity signs possible"
     elif corrected_mg_l <= 40.0:
         status = "MODERATELY_TOXIC"
-        recommendation = "Hold dose and reduce. Significant toxicity risk."
+        recommendation = "Elevated estimate; promptly assess for toxicity and measure free phenytoin."
         risk = "Nystagmus, ataxia, slurred speech likely"
     else:
         status = "SEVERELY_TOXIC"
-        recommendation = "Hold phenytoin. Monitor closely. Consider ICU admission."
+        recommendation = "Markedly elevated estimate; urgently assess the patient and obtain measured free phenytoin."
         risk = "Severe CNS toxicity, cardiac arrhythmia risk"
     
     return {
@@ -205,41 +209,18 @@ def calculate_steady_state_mm(
     vmax_mg_per_day: float = DEFAULT_VMAX * 70,
     km_mg_l: float = DEFAULT_KM
 ) -> Dict[str, Any]:
+    """Research-only steady-state model: F * dose = Vmax * Css / (Km + Css).
+
+    Vmax is mg/day; Km and Css are mg/L. Solving gives
+    Css = Km * F * dose / (Vmax - F * dose).
+    This assumes steady state and population parameters, not an individual prescription.
     """
-    Calculate steady-state phenytoin concentration using Michaelis-Menten kinetics.
-    
-    Css = (Vmax * Dose_rate) / (Km + Dose_rate)
-    where Dose_rate = daily_dose_mg (since Vmax is in mg/day)
-    
-    More precisely:
-    Css = (Vmax * D/tau) / (Km + D/tau)
-    For once-daily: Css = (Vmax * daily_dose) / (Km * F * 24 + daily_dose)
-    Simplified: Css = (Vmax * daily_dose) / (Km + daily_dose)
-    
-    Args:
-        daily_dose_mg: Daily phenytoin dose in mg
-        vmax_mg_per_day: Maximum metabolism rate in mg/day (default 490 mg/day for 70kg)
-        km_mg_l: Michaelis constant in mg/L (default 4.0)
-        
-    Returns:
-        Dictionary with steady-state concentration
-    """
-    if daily_dose_mg <= 0:
-        raise ValueError("Daily dose must be positive")
-    if vmax_mg_per_day <= 0:
-        raise ValueError("Vmax must be positive")
-    if km_mg_l <= 0:
-        raise ValueError("Km must be positive")
-    
-    # Css = (Vmax * Dose_rate) / (Km + Dose_rate)
-    # For phenytoin: Css = (Vmax * daily_dose) / (Km * bioavailability + daily_dose)
-    # Simplified: Css = (Vmax * daily_dose) / (Km + daily_dose)
-    css = (vmax_mg_per_day * daily_dose_mg) / (km_mg_l * PHENYTOIN_F * 1000 + daily_dose_mg)
-    
-    # Alternative formulation (more standard):
-    # Css (mg/L) = (Vmax (mg/day) * Dose (mg/day)) / (Km (mg/L) * F * 1000 + Dose (mg/day))
-    # This gives Css in mg/L
-    
+    if not all(math.isfinite(x) and x > 0 for x in (daily_dose_mg, vmax_mg_per_day, km_mg_l)):
+        raise ValueError("Dose, Vmax and Km must be finite and positive")
+    input_rate = PHENYTOIN_F * daily_dose_mg
+    if input_rate >= vmax_mg_per_day:
+        raise ValueError("F * daily dose must be below Vmax; no finite steady state exists")
+    css = km_mg_l * input_rate / (vmax_mg_per_day - input_rate)
     return {
         "daily_dose_mg": daily_dose_mg,
         "vmax_mg_per_day": vmax_mg_per_day,
@@ -247,10 +228,9 @@ def calculate_steady_state_mm(
         "bioavailability": PHENYTOIN_F,
         "predicted_css_mg_l": round(css, 1),
         "interpretation": interpret_phenytoin(css),
-        "saturation_warning": css > 15 and daily_dose_mg > 300,
-        "notes": "Michaelis-Menten kinetics: small dose increases can cause large concentration changes near saturation."
+        "saturation_warning": input_rate / vmax_mg_per_day > 0.8,
+        "notes": "Research-only population model. Phenytoin has saturable clearance; individual monitoring is essential."
     }
-
 
 def estimate_vmax_km_from_two_levels(
     dose1_mg_day: float,
@@ -258,115 +238,57 @@ def estimate_vmax_km_from_two_levels(
     dose2_mg_day: float,
     css2_mg_l: float
 ) -> Dict[str, Any]:
+    """Fit Vmax (mg/day) and Km (mg/L) from two STEADY-STATE dose/level pairs.
+
+    F*D = Vmax*Css/(Km+Css), assuming equal bioavailability for both pairs.
+    The inverse fit can be unstable; verify steady state and unchanged interactions.
     """
-    Estimate individual Vmax and Km from two steady-state dose/concentration pairs.
-    
-    Using two Michaelis-Menten equations:
-    Css1 = (Vmax * D1) / (Km + D1)
-    Css2 = (Vmax * D2) / (Km + D2)
-    
-    Solving:
-    Km = (D1 * Css2 - D2 * Css1) / (Css1 - Css2)  [when Css1 != Css2]
-    Vmax = Css1 * (Km + D1) / D1
-    
-    Args:
-        dose1_mg_day: First daily dose in mg
-        css1_mg_l: Steady-state concentration at first dose in mg/L
-        dose2_mg_day: Second daily dose in mg
-        css2_mg_l: Steady-state concentration at second dose in mg/L
-        
-    Returns:
-        Dictionary with estimated Vmax and Km
-    """
-    if dose1_mg_day <= 0 or dose2_mg_day <= 0:
-        raise ValueError("Both doses must be positive")
-    if css1_mg_l <= 0 or css2_mg_l <= 0:
-        raise ValueError("Both concentrations must be positive")
-    if abs(css1_mg_l - css2_mg_l) < 0.01:
-        raise ValueError("Concentrations must differ for parameter estimation")
-    
-    # Solve for Km using correct derivation:
-    # Css = (Vmax * D) / (Km + D)  =>  Km = D1*D2*(Css1-Css2) / (Css2*D1 - Css1*D2)
-    numerator = dose1_mg_day * dose2_mg_day * (css1_mg_l - css2_mg_l)
-    denominator = css2_mg_l * dose1_mg_day - css1_mg_l * dose2_mg_day
-    
-    if abs(denominator) < 0.001:
-        raise ValueError("Data is inconsistent - cannot estimate parameters.")
-    
-    km = numerator / denominator
-    
-    if km <= 0:
-        raise ValueError("Calculated Km is non-positive. Data may be inconsistent.")
-    
-    # Solve for Vmax
-    vmax = css1_mg_l * (km + dose1_mg_day) / dose1_mg_day
-    
+    vals = (dose1_mg_day, css1_mg_l, dose2_mg_day, css2_mg_l)
+    if not all(math.isfinite(x) and x > 0 for x in vals):
+        raise ValueError("Both doses and concentrations must be finite and positive")
+    if dose1_mg_day == dose2_mg_day or css1_mg_l == css2_mg_l:
+        raise ValueError("Two distinct dose and concentration pairs are required")
+    input1 = PHENYTOIN_F * dose1_mg_day
+    input2 = PHENYTOIN_F * dose2_mg_day
+    denominator = input1 / css1_mg_l - input2 / css2_mg_l
+    if math.isclose(denominator, 0.0, rel_tol=1e-10, abs_tol=1e-12):
+        raise ValueError("Data do not identify a stable Km estimate")
+    km = (input2 - input1) / denominator
+    vmax = input1 * (km + css1_mg_l) / css1_mg_l
+    if not all(math.isfinite(x) and x > 0 for x in (km, vmax)):
+        raise ValueError("Pairs are inconsistent with positive Michaelis-Menten parameters")
+    if not (vmax > max(input1, input2)):
+        raise ValueError("Estimated Vmax must exceed both input rates")
     return {
         "estimated_vmax_mg_per_day": round(vmax, 1),
         "estimated_km_mg_l": round(km, 2),
         "input_data": {
-            "dose1_mg_day": dose1_mg_day,
-            "css1_mg_l": css1_mg_l,
-            "dose2_mg_day": dose2_mg_day,
-            "css2_mg_l": css2_mg_l
+            "dose1_mg_day": dose1_mg_day, "css1_mg_l": css1_mg_l,
+            "dose2_mg_day": dose2_mg_day, "css2_mg_l": css2_mg_l
         },
-        "notes": "Individual Vmax/Km estimated from two steady-state levels. Use for personalized dosing."
+        "notes": "Research-only two-point nonlinear pharmacokinetic fit; not a validated individual dose recommendation."
     }
-
 
 def predict_dose_for_target_css(
     target_css_mg_l: float,
     vmax_mg_per_day: float = DEFAULT_VMAX * 70,
     km_mg_l: float = DEFAULT_KM
 ) -> Dict[str, Any]:
+    """Invert the research-only steady-state model for an oral daily dose.
+
+    Dose (mg/day) = Vmax * Css / (F * (Km + Css)).
     """
-    Predict daily dose needed to achieve target steady-state concentration.
-    
-    Rearranging Michaelis-Menten:
-    Dose = (Css * Vmax) / (Vmax - Css)  [when Css < Vmax]
-    
-    More precisely with Km:
-    Dose = (Css * Km) / (Vmax - Css)  [simplified]
-    Dose = (target_css * km * vmax) / (vmax - target_css)  [corrected]
-    
-    Args:
-        target_css_mg_l: Target steady-state concentration in mg/L
-        vmax_mg_per_day: Maximum metabolism rate in mg/day
-        km_mg_l: Michaelis constant in mg/L
-        
-    Returns:
-        Dictionary with predicted dose
-    """
-    if target_css_mg_l <= 0:
-        raise ValueError("Target concentration must be positive")
-    if target_css_mg_l >= vmax_mg_per_day / (km_mg_l + 1):
-        raise ValueError("Target concentration too high - may not be achievable safely")
-    
-    # From Css = (Vmax * D) / (Km + D), solve for D:
-    # D = (Css * Km) / (Vmax - Css)
-    # But we need to account for units properly
-    # Css (mg/L) = (Vmax (mg/day) * D (mg/day)) / (Km (mg/L) * F * 1000 + D (mg/day))
-    # Solve for D:
-    # Css * (Km * F * 1000 + D) = Vmax * D
-    # Css * Km * F * 1000 + Css * D = Vmax * D
-    # Css * Km * F * 1000 = D * (Vmax - Css)
-    # D = (Css * Km * F * 1000) / (Vmax - Css)
-    
-    denominator = vmax_mg_per_day - target_css_mg_l
-    if denominator <= 0:
-        raise ValueError("Target concentration exceeds Vmax - not achievable")
-    
-    daily_dose = (target_css_mg_l * km_mg_l * PHENYTOIN_F * 1000) / denominator
-    
+    if not all(math.isfinite(x) and x > 0 for x in (target_css_mg_l, vmax_mg_per_day, km_mg_l)):
+        raise ValueError("Target concentration, Vmax and Km must be finite and positive")
+    daily_dose = vmax_mg_per_day * target_css_mg_l / (PHENYTOIN_F * (km_mg_l + target_css_mg_l))
     return {
         "target_css_mg_l": target_css_mg_l,
         "vmax_mg_per_day": vmax_mg_per_day,
         "km_mg_l": km_mg_l,
         "predicted_daily_dose_mg": round(daily_dose, 0),
         "predicted_daily_dose_mg_per_kg": round(daily_dose / 70, 1),
-        "notes": "Dose prediction based on Michaelis-Menten kinetics. Monitor levels after adjustment."
+        "notes": "Research-only inverse model; not a prescription. Confirm with clinical evaluation and drug levels."
     }
-
 
 def calculate_loading_dose(
     target_concentration_mg_l: float,
@@ -388,11 +310,15 @@ def calculate_loading_dose(
     Returns:
         Dictionary with loading dose
     """
-    if target_concentration_mg_l <= 0:
+    if not math.isfinite(target_concentration_mg_l) or target_concentration_mg_l <= 0:
         raise ValueError("Target concentration must be positive")
-    if weight_kg <= 0:
+    if not math.isfinite(weight_kg) or weight_kg <= 0:
         raise ValueError("Weight must be positive")
     
+    if not math.isfinite(vd_liters_per_kg) or vd_liters_per_kg <= 0:
+        raise ValueError("Volume of distribution must be finite and positive")
+    if not math.isfinite(bioavailability) or not 0 < bioavailability <= 1:
+        raise ValueError("Bioavailability must be finite and between 0 and 1")
     vd_total = vd_liters_per_kg * weight_kg
     ld_mg = (vd_total * target_concentration_mg_l) / bioavailability
     
@@ -421,7 +347,7 @@ def calculate_loading_dose(
             "infusion_time_minutes": round(ld_rounded / 50, 0),
             "note": "Max IV rate 50mg/min with cardiac monitoring"
         },
-        "notes": "Loading dose for acute situations. Monitor levels 2-4 hours post-oral dose."
+        "notes": "Research-only loading-dose estimate; route, timing, formulation and rate must be clinician-verified."
     }
 
 
@@ -430,65 +356,49 @@ def saturation_kinetics_warning(
     proposed_increase_mg: float,
     current_css_mg_l: Optional[float] = None
 ) -> Dict[str, Any]:
-    """
-    Warn about phenytoin saturation kinetics.
-    
-    Near saturation, small dose increases cause disproportionate concentration rises.
-    Rule of thumb: at 300mg/day, a 10% dose increase can cause 50-100% concentration increase.
-    
-    Args:
-        current_dose_mg: Current daily dose in mg
-        proposed_increase_mg: Proposed dose increase in mg
-        current_css_mg_l: Current steady-state concentration (optional)
-        
-    Returns:
-        Dictionary with saturation warnings
-    """
+    """Flag increases with potentially disproportionate steady-state exposure."""
+    if not math.isfinite(current_dose_mg) or current_dose_mg <= 0:
+        raise ValueError("Current dose must be finite and positive")
+    if not math.isfinite(proposed_increase_mg) or proposed_increase_mg < 0:
+        raise ValueError("Proposed increase must be finite and non-negative")
+    if current_css_mg_l is not None and (not math.isfinite(current_css_mg_l) or current_css_mg_l < 0):
+        raise ValueError("Current concentration must be finite and non-negative")
     warnings = []
     risk_level = "LOW"
-    
     if current_dose_mg >= 300:
-        warnings.append("Current dose >=300mg/day: approaching saturation kinetics zone.")
+        warnings.append("Population-dose thresholds do not establish individual saturation; monitor concentrations.")
         risk_level = "MODERATE"
-    
-    if current_dose_mg >= 400:
-        warnings.append("Current dose >=400mg/day: high saturation risk. Small increases may cause toxicity.")
+    if current_dose_mg >= 400 or proposed_increase_mg > 100:
+        warnings.append("Large input rate or increase: seek specialist review before changes.")
         risk_level = "HIGH"
-    
-    if proposed_increase_mg > 100:
-        warnings.append(f"Proposed increase of {proposed_increase_mg}mg is large. Consider smaller increments (25-50mg).")
+    if current_css_mg_l is not None and current_css_mg_l > 15:
+        warnings.append("Estimated concentration approaches the conventional upper reference limit.")
         risk_level = "HIGH"
-    
-    if current_css_mg_l and current_css_mg_l > 15:
-        warnings.append(f"Current level {current_css_mg_l} mg/L is near upper therapeutic limit.")
+    vmax = DEFAULT_VMAX * 70
+    old_input = PHENYTOIN_F * current_dose_mg
+    new_input = PHENYTOIN_F * (current_dose_mg + proposed_increase_mg)
+    if new_input >= vmax:
+        warnings.append("Population model predicts no finite steady state at proposed input rate.")
         risk_level = "HIGH"
-    
-    # Estimate concentration increase using M-M kinetics
-    vmax = DEFAULT_VMAX * 70  # 490 mg/day
-    km = DEFAULT_KM  # 4 mg/L
-    
-    if current_dose_mg > 0:
-        css_current = (vmax * current_dose_mg) / (km * PHENYTOIN_F * 1000 + current_dose_mg)
-        css_new = (vmax * (current_dose_mg + proposed_increase_mg)) / (km * PHENYTOIN_F * 1000 + current_dose_mg + proposed_increase_mg)
-        
-        pct_dose_change = (proposed_increase_mg / current_dose_mg) * 100
-        pct_css_change = ((css_new - css_current) / css_current) * 100 if css_current > 0 else 0
-        
+    elif old_input < vmax and proposed_increase_mg > 0:
+        css_current = DEFAULT_KM * old_input / (vmax - old_input)
+        css_new = DEFAULT_KM * new_input / (vmax - new_input)
+        pct_dose_change = proposed_increase_mg / current_dose_mg * 100
+        pct_css_change = (css_new / css_current - 1) * 100
         if pct_css_change > pct_dose_change * 2:
             warnings.append(
-                f"Non-linear kinetics: {pct_dose_change:.0f}% dose increase may cause "
-                f"~{pct_css_change:.0f}% concentration increase."
+                f"Population model: {pct_dose_change:.0f}% dose increase may raise "
+                f"steady-state concentration by {pct_css_change:.0f}%."
             )
-    
+            risk_level = "HIGH"
     return {
         "current_dose_mg": current_dose_mg,
         "proposed_increase_mg": proposed_increase_mg,
         "risk_level": risk_level,
         "warnings": warnings,
-        "recommendation": "Increase dose in small increments (25-50mg). Wait 5-7 half-lives (7-14 days) before reassessing.",
-        "saturation_notes": "Phenytoin follows Michaelis-Menten (zero-order) kinetics at therapeutic doses."
+        "recommendation": "Do not adjust dosing from this model alone; obtain clinical/pharmacist assessment and measured levels.",
+        "saturation_notes": "Steady-state concentration increases sharply as F*dose approaches Vmax."
     }
-
 
 # ============================================================================
 # Full Assessment
@@ -525,24 +435,24 @@ def full_phenytoin_assessment(
     # Step 2: Interpret corrected level
     interp = interpret_phenytoin(corrected)
     
-    # Step 3: Estimate free phenytoin (approximately 10% of total)
+    # Step 3: Proxy free estimate only; not a measured unbound concentration.
     free_phenytoin = round(corrected * 0.1, 1)
     
-    # Step 4: If dose provided, predict steady-state
+    # Step 4: Population model if a dose is provided; not a dosing recommendation
     ss_prediction = None
-    if daily_dose_mg:
-        v = vmax_mg_per_day if vmax_mg_per_day else DEFAULT_VMAX * weight_kg
-        k = km_mg_l if km_mg_l else DEFAULT_KM
+    if daily_dose_mg is not None:
+        if not math.isfinite(weight_kg) or weight_kg <= 0:
+            raise ValueError("Weight must be finite and positive")
+        v = vmax_mg_per_day if vmax_mg_per_day is not None else DEFAULT_VMAX * weight_kg
+        k = km_mg_l if km_mg_l is not None else DEFAULT_KM
         ss_prediction = calculate_steady_state_mm(daily_dose_mg, v, k)
     
-    # Step 5: Loading dose if subtherapeutic
+    # Step 5: No automatic loading-dose advice from an estimated concentration.
     loading = None
-    if corrected < TOTAL_THERAPEUTIC_LOW:
-        loading = calculate_loading_dose(TOTAL_THERAPEUTIC_HIGH, weight_kg=weight_kg)
     
-    # Step 6: Saturation warning if dose provided
+    # Step 6: Model saturation warning if dose provided
     saturation = None
-    if daily_dose_mg:
+    if daily_dose_mg is not None:
         saturation = saturation_kinetics_warning(daily_dose_mg, 50, corrected)
     
     return {
@@ -553,7 +463,7 @@ def full_phenytoin_assessment(
         "steady_state_prediction": ss_prediction,
         "loading_dose": loading,
         "saturation_warning": saturation,
-        "disclaimer": "FOR EDUCATIONAL/RESEARCH USE ONLY. Not a substitute for clinical pharmacist review."
+        "disclaimer": "Research use only. Corrected levels are estimates, not measured free concentrations; dosing requires clinical/pharmacist review."
     }
 
 
