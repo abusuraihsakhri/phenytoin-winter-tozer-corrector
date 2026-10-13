@@ -1,7 +1,7 @@
 {
   "suite_name": "Phenytoin Winter Tozer Corrector Golden Benchmark Test Suite",
   "system_slug": "phenytoin-winter-tozer-corrector",
-  "standard_reference": "CAP / CLSI / NIST Standards",
+  "standard_reference": "Demonstration thresholds only; not clinically validated",
   "test_cases": [
     {
       "case_id": "BENCH-01-NOMINAL",
