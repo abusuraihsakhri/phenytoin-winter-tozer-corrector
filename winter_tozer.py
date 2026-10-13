@@ -8,7 +8,7 @@ Implements Michaelis-Menten kinetics for dose adjustment.
 Key formulas:
 - Normal albumin: Corrected = Measured / ((0.25 * albumin) + 0.1)
 - Renal impairment (CrCl <10): Corrected = Measured / ((0.1 * albumin) + 0.1)
-- Michaelis-Menten: Css = (Vmax * Dose/tau) / (Km + Dose/tau)
+- Michaelis-Menten steady state: Css = Km * F * daily_dose / (Vmax - F * daily_dose)
 - Steady state estimation from two levels
 - Loading dose calculation
 
@@ -153,6 +153,7 @@ def correct_phenytoin(
     # Add interpretation
     corrected = result["corrected_phenytoin_mg_l"]
     result["interpretation"] = interpret_phenytoin(corrected)
+    result["clinical_note"] = "Corrected total is a mathematical estimate, not a measured free concentration; directly measure free levels when binding is altered."
     
     return result
 
@@ -196,7 +197,8 @@ def interpret_phenytoin(corrected_mg_l: float) -> Dict[str, Any]:
         "status": status,
         "recommendation": recommendation,
         "risk": risk,
-        "therapeutic_range": "10-20 mg/L (total)"
+        "therapeutic_range": "10-20 mg/L (total)",
+        "clinical_caveat": "Numerical categories are not toxicity diagnoses or instructions to change doses."
     }
 
 
@@ -340,12 +342,12 @@ def calculate_loading_dose(
             "max_single_dose_mg": max_oral,
             "number_of_doses": num_oral_doses,
             "dose_per_administration_mg": min(ld_rounded, max_oral),
-            "note": "Give divided doses, max 400mg per dose orally"
+            "note": "Illustrative segmentation only; confirm route-specific protocols with a clinician."
         },
         "iv_dosing": {
             "max_rate_mg_per_min": 50,
             "infusion_time_minutes": round(ld_rounded / 50, 0),
-            "note": "Max IV rate 50mg/min with cardiac monitoring"
+            "note": "Adult upper-limit illustration only; slower rates may be required. Not an infusion order."
         },
         "notes": "Research-only loading-dose estimate; route, timing, formulation and rate must be clinician-verified."
     }
@@ -428,6 +430,8 @@ def full_phenytoin_assessment(
     Returns:
         Complete assessment dictionary
     """
+    if not math.isfinite(weight_kg) or weight_kg <= 0:
+        raise ValueError("Weight must be finite and positive")
     # Step 1: Correct phenytoin for albumin
     correction = correct_phenytoin(measured_phenytoin_mg_l, albumin_g_dl, crcl_ml_min)
     corrected = correction["corrected_phenytoin_mg_l"]
@@ -532,8 +536,8 @@ def main(argv=None):
         print(json.dumps(result, indent=2))
 
     elif args.command == "steady-state":
-        v = args.vmax if args.vmax else DEFAULT_VMAX * 70
-        k = args.km if args.km else DEFAULT_KM
+        v = args.vmax if args.vmax is not None else DEFAULT_VMAX * 70
+        k = args.km if args.km is not None else DEFAULT_KM
         result = calculate_steady_state_mm(args.dose, v, k)
         print(json.dumps(result, indent=2))
 
